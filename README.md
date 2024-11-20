@@ -4,6 +4,8 @@ A minigame about arithmetic and the number ten. With a sprinkle of VIM motions
 
 Inspired by [Make-Ten](https://pancelor.itch.io/make-ten).
 
+<img src="https://github.com/lmossina/summax/blob/main/doc/assets/summax_screenshot.png" alt="game-screenshot" width="400">
+
 ## Get started
 
 1. install the go compiler: https://go.dev/doc/install
