@@ -141,7 +141,7 @@ func (g *Game) moveCursor(direction string) {
 
 func (g *Game) moveCursorUp(jumpSize ...int) {
 	jump := 1
-	if len(jumpSize) == 1 {
+	if len(jumpSize) >= 1 {
 		jump = max(1, jumpSize[0])
 	}
 
@@ -155,7 +155,7 @@ func (g *Game) moveCursorUp(jumpSize ...int) {
 
 func (g *Game) moveCursorDown(jumpSize ...int) {
 	jump := 1
-	if len(jumpSize) == 1 {
+	if len(jumpSize) >= 1 {
 		jump = max(1, jumpSize[0])
 	}
 	if g.cursor[0] < g.nrows-jump {
@@ -168,7 +168,7 @@ func (g *Game) moveCursorDown(jumpSize ...int) {
 
 func (g *Game) moveCursorRight(jumpSize ...int) {
 	jump := 1
-	if len(jumpSize) == 1 {
+	if len(jumpSize) >= 1 {
 		jump = max(1, jumpSize[0])
 	}
 	if g.cursor[1] < g.ncols-jump {
@@ -179,9 +179,40 @@ func (g *Game) moveCursorRight(jumpSize ...int) {
 	g.updateSelectionArea()
 }
 
+func (game *Game) jumpWordRight(nWords ...int) {
+	// imitate 'w': move to beginning of following word
+	words := 1
+	if len(nWords) >= 1 {
+		words = nWords[0]
+	}
+
+	jump := 1
+	row, col := game.cursor[0], game.cursor[1]
+	countWords := 0
+
+	for row < game.ncols {
+		// if all columns right of cursor are zero, don't move
+		// TODO in this case, go to newline (if any; and nonzero)
+		for col < game.ncols-1 {
+			if game.board[row][col] == 0 && game.board[row][col+1] != 0 {
+				nJumps := col + 1 - game.cursor[1]
+				game.moveCursorRight(nJumps)
+				countWords++
+				if countWords == words {
+					break
+				}
+			}
+			jump++
+			col++
+		}
+		col = 0 //game.cursor[1]
+		row++
+	}
+}
+
 func (g *Game) moveCursorLeft(jumpSize ...int) {
 	jump := 1
-	if len(jumpSize) == 1 {
+	if len(jumpSize) >= 1 {
 		jump = max(1, jumpSize[0])
 	}
 
@@ -230,6 +261,25 @@ func (game *Game) handleSelect() {
 	}
 }
 
+// TODO move part of this actions to UI?
+func (game *Game) handleVisualMode() {
+	if !game.toggleSelection {
+		game.toggleSelection = !game.toggleSelection
+
+		game.anchorPoint = anchorPoint{
+			row:    game.cursor[0],
+			col:    game.cursor[1],
+			active: true,
+		}
+		game.selectArea[game.cursor[0]][game.cursor[1]] = 1
+	} else {
+		// game.evaluateSelection()
+		game.clearSelection()
+		game.toggleSelection = !game.toggleSelection
+		game.anchorPoint = anchorPoint{}
+	}
+}
+
 func main() {
 	// Force truecolor mode
 	os.Setenv("TCELL_TRUECOLOR", "1")
@@ -262,6 +312,7 @@ func main() {
 					game.clearSelection()
 					game.toggleSelection = !game.toggleSelection
 				}
+				// move with direction arrows
 			case tcell.KeyRight:
 				game.moveCursor("right")
 			case tcell.KeyLeft:
@@ -270,8 +321,11 @@ func main() {
 				game.moveCursor("down")
 			case tcell.KeyUp:
 				game.moveCursor("up")
+				//
+				// VISUAL BLOCK mode
 			case tcell.KeyCtrlV:
-				game.handleSelect()
+				// game.handleSelect()
+				game.handleVisualMode()
 			case tcell.KeyRune:
 				switch r := ev.Rune(); {
 				// hold jump values (0..9)
@@ -293,8 +347,16 @@ func main() {
 					game.moveCursorRight(tui.jumpBuffer)
 					tui.updateLastMove(r)
 					tui.updateBuffer(1)
-				case r == 'v' || r == ' ':
+				case r == 'v':
+					// TODO implement proper VISUAL mode: now == VISUAL BLOCK
+					// game.handleSelect()
+					game.handleVisualMode()
+				case r == ' ':
 					game.handleSelect()
+				case r == 'w':
+					game.jumpWordRight(tui.jumpBuffer)
+					tui.updateLastMove(r)
+					tui.updateBuffer(1)
 				}
 			}
 		}
