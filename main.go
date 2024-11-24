@@ -207,22 +207,24 @@ func (g *Game) moveCursorRight(jumpSize ...int) {
 
 func (game *Game) jumpWordRight(nWords rune) {
 	// imitate 'w': move to beginning of following word
+
 	words := 1
 	if nWords >= '0' && nWords <= '9' {
 		words = int(nWords - '0')
 	}
-	// if len(nWords) >= 1 {
-	// 	words = nWords[0]
-	// }
 
 	jump := 1
 	row, col := game.cursor[0], game.cursor[1]
 	countWords := 0
 
+	// 1. cursor is in last word or blanks of last line:
+	//  go to last (blank) cell (e.g. in vim if spaces)
+	// 2. Draw the rest of the owl
+	//
 	for row < game.ncols {
-		// if all columns right of cursor are zero, don't move
-		// TODO in this case, go to newline (if any; and nonzero)
+		// if all columns right of cursor are zero, go to newline (if any)
 		for col < game.ncols-1 {
+			// FIXME incorrect jumps: if in the middle of seq of zero cells
 			if game.board[row][col] == 0 && game.board[row][col+1] != 0 {
 				nJumps := col + 1 - game.cursor[1]
 				game.moveCursorRight(nJumps)
@@ -314,7 +316,7 @@ func main() {
 	os.Setenv("TCELL_TRUECOLOR", "1")
 
 	game := initGame()
-	tui := TUI{1, [2]rune{' ', ' '}, false, false, false}
+	tui := TUI{'1', [2]rune{' ', ' '}, false, false, false}
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		log.Fatalf("Error creating screen: %v", err)
@@ -365,6 +367,8 @@ func main() {
 				game.handleVisualMode()
 			case tcell.KeyRune:
 				switch r := ev.Rune(); {
+				case r == 'q':
+					return
 				// hold jump values (0..9)
 				case r >= '0' && r <= '9':
 					tui.updateBuffer(int(r - '0'))
@@ -656,11 +660,11 @@ func (tui *TUI) drawMessages(game *Game, screen tcell.Screen, rowAnchor, colAnch
 	verticalSpace := 1
 	messages := []string{
 		"",
-		"      move: h  j  k  l",
-		"            ←  ↓  ↑  →",
+		"     score: " + fmt.Sprintf("%d", game.totalScore),
+		"      exit: q[uit], ctrl+c",
+		"      move: h j k l  or  ←  ↓  ↑  →",
 		"(de)select",
 		"    & eval: ctrl+v, v, or ␣ (space bar)",
-		"     score: " + fmt.Sprintf("%d", game.totalScore),
 		"    motion: " + fmt.Sprintf(string(tui.lastMove[:])),
 		"",
 	}
