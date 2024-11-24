@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
-	"github.com/gdamore/tcell/v2"
-	"github.com/mattn/go-runewidth"
 	"log"
 	"math/rand"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/mattn/go-runewidth"
 )
 
 var _ = strings.Repeat("f unused imports", 1)
@@ -139,6 +140,31 @@ func (g *Game) moveCursor(direction string) {
 	g.updateSelectionArea()
 }
 
+func runeToInt(input rune) (int, bool) {
+	if input >= '0' && input <= '9' {
+		return int(input - '0'), true
+	}
+	return 0, false
+}
+
+func (g *Game) motionInput(motionKey rune, jumpSize rune) {
+	digit, isDigit := runeToInt(jumpSize)
+	if !isDigit {
+		panic("Error, motion inputs: expected digit 0..9")
+	}
+	switch motionKey {
+	case 'h':
+		g.moveCursorLeft(digit)
+	case 'j':
+		g.moveCursorDown(digit)
+	case 'k':
+		g.moveCursorUp(digit)
+	case 'l':
+		g.moveCursorRight(digit)
+	}
+	g.updateSelectionArea()
+}
+
 func (g *Game) moveCursorUp(jumpSize ...int) {
 	jump := 1
 	if len(jumpSize) >= 1 {
@@ -179,12 +205,15 @@ func (g *Game) moveCursorRight(jumpSize ...int) {
 	g.updateSelectionArea()
 }
 
-func (game *Game) jumpWordRight(nWords ...int) {
+func (game *Game) jumpWordRight(nWords rune) {
 	// imitate 'w': move to beginning of following word
 	words := 1
-	if len(nWords) >= 1 {
-		words = nWords[0]
+	if nWords >= '0' && nWords <= '9' {
+		words = int(nWords - '0')
 	}
+	// if len(nWords) >= 1 {
+	// 	words = nWords[0]
+	// }
 
 	jump := 1
 	row, col := game.cursor[0], game.cursor[1]
@@ -205,7 +234,7 @@ func (game *Game) jumpWordRight(nWords ...int) {
 			jump++
 			col++
 		}
-		col = 0 //game.cursor[1]
+		col = 0 // game.cursor[1]
 		row++
 	}
 }
@@ -315,12 +344,20 @@ func main() {
 				// move with direction arrows
 			case tcell.KeyRight:
 				game.moveCursor("right")
+				tui.updateLastMove('l')
+				tui.updateBuffer(1)
 			case tcell.KeyLeft:
 				game.moveCursor("left")
+				tui.updateLastMove('h')
+				tui.updateBuffer(1)
 			case tcell.KeyDown:
 				game.moveCursor("down")
+				tui.updateLastMove('j')
+				tui.updateBuffer(1)
 			case tcell.KeyUp:
 				game.moveCursor("up")
+				tui.updateLastMove('k')
+				tui.updateBuffer(1)
 				//
 				// VISUAL BLOCK mode
 			case tcell.KeyCtrlV:
@@ -331,25 +368,12 @@ func main() {
 				// hold jump values (0..9)
 				case r >= '0' && r <= '9':
 					tui.updateBuffer(int(r - '0'))
-				case r == 'h':
-					game.moveCursorLeft(tui.jumpBuffer)
-					tui.updateLastMove(r)
-					tui.updateBuffer(1)
-				case r == 'j':
-					game.moveCursorDown(tui.jumpBuffer)
-					tui.updateLastMove(r)
-					tui.updateBuffer(1)
-				case r == 'k':
-					game.moveCursorUp(tui.jumpBuffer)
-					tui.updateLastMove(r)
-					tui.updateBuffer(1)
-				case r == 'l':
-					game.moveCursorRight(tui.jumpBuffer)
+				case r == 'h' || r == 'j' || r == 'k' || r == 'l':
+					game.motionInput(r, tui.jumpBuffer)
 					tui.updateLastMove(r)
 					tui.updateBuffer(1)
 				case r == 'v':
 					// TODO implement proper VISUAL mode: now == VISUAL BLOCK
-					// game.handleSelect()
 					game.handleVisualMode()
 				case r == ' ':
 					game.handleSelect()
@@ -357,15 +381,22 @@ func main() {
 					game.jumpWordRight(tui.jumpBuffer)
 					tui.updateLastMove(r)
 					tui.updateBuffer(1)
+					// TODO some other usable options for motions:
+					// '[num]b': b[ack] num words (beginning of word)
+					// '[num]e': e[nd] of word
+					// "[num]:" jump to line
+					// "[num]|" jump to column
 				}
 			}
+			// TODO it could be interesting to have a limited budget of moves
+			// and implement 'u' to undo
 		}
 	}
 }
 
 // === UI ===
 type TUI struct {
-	jumpBuffer  int
+	jumpBuffer  rune // int
 	lastMove    [2]rune
 	brailleMode bool
 	printLogs   bool
@@ -373,13 +404,14 @@ type TUI struct {
 }
 
 func (tui *TUI) updateBuffer(val int) {
-	tui.jumpBuffer = val
+	if val < 0 || val >= 10 {
+		panic(fmt.Sprintf("unexpected input: got '%d', expected int in 0..9 range", val))
+	}
+	tui.jumpBuffer = rune(val) + '0'
 }
 
 func (tui *TUI) updateLastMove(move rune) {
-	// warning: this only works with VIM motions
-	// FIXME for directions keys operations
-	tui.lastMove = [2]rune{rune('0' + tui.jumpBuffer), move}
+	tui.lastMove = [2]rune{tui.jumpBuffer, move}
 }
 
 type RGBColors struct {
@@ -404,11 +436,13 @@ var (
 	red      = tcell.StyleDefault.Foreground(tcell.ColorRed)
 )
 
-var customStyle = tcell.StyleDefault
-var defaultStyle = customStyle // tcell.StyleDefault
-var highlightStyle = tcell.StyleDefault.Foreground(tcell.ColorPurple).Background(tcell.ColorWhite)
-var cursorHighlight = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorYellow)
-var cursorPosition = tcell.StyleDefault.Foreground(tcell.ColorBlack)
+var (
+	customStyle     = tcell.StyleDefault
+	defaultStyle    = customStyle // tcell.StyleDefault
+	highlightStyle  = tcell.StyleDefault.Foreground(tcell.ColorPurple).Background(tcell.ColorWhite)
+	cursorHighlight = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorYellow)
+	cursorPosition  = tcell.StyleDefault.Foreground(tcell.ColorBlack)
+)
 
 func drawString(screen tcell.Screen, row, col int, text string) {
 	x := col
@@ -456,7 +490,7 @@ func drawBorder(screen tcell.Screen, nHeight, nWidth int, frameAnchor [2]int) {
 func displayBoard(game *Game, tui *TUI, screen tcell.Screen, printLogs, printDebug bool) {
 	// TODO consider making offsets depending on terminal size, and center board/text accordingly
 	leftOffset := 4
-	upperOffset := 4 //len(borders)
+	upperOffset := 4 // len(borders)
 
 	titleRow := 1
 
@@ -576,7 +610,6 @@ func displayBoard(game *Game, tui *TUI, screen tcell.Screen, printLogs, printDeb
 			if countLeft <= 9 && countLeft > 0 {
 				screen.SetContent(cCol*2+2+columnOffset-1-countLeft*2, vimRowPos, rune('0'+countLeft), nil, darkGray)
 			} else {
-
 				screen.SetContent(cCol*2+2+columnOffset-1-countLeft*2, vimRowPos, '·', nil, darkGray)
 			}
 		}
@@ -655,7 +688,7 @@ func (tui *TUI) drawMessages(game *Game, screen tcell.Screen, rowAnchor, colAnch
 	for i, line := range messages {
 		x := cCol
 		for _, char := range line {
-			screen.SetContent(x, nRows+i+verticalSpace+cRow, char, nil, customStyle) //tcell.StyleDefault)
+			screen.SetContent(x, nRows+i+verticalSpace+cRow, char, nil, customStyle) // tcell.StyleDefault)
 			x += runewidth.RuneWidth(char)
 		}
 	}
