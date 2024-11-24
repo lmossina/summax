@@ -213,31 +213,44 @@ func (game *Game) jumpWordRight(nWords rune) {
 		words = int(nWords - '0')
 	}
 
-	jump := 1
-	row, col := game.cursor[0], game.cursor[1]
+	// jump := 1
+	// _, col := game.cursor[0], game.cursor[1]
 	countWords := 0
 
 	// 1. cursor is in last word or blanks of last line:
 	//  go to last (blank) cell (e.g. in vim if spaces)
 	// 2. Draw the rest of the owl
 	//
-	for row < game.ncols {
-		// if all columns right of cursor are zero, go to newline (if any)
-		for col < game.ncols-1 {
-			// FIXME incorrect jumps: if in the middle of seq of zero cells
-			if game.board[row][col] == 0 && game.board[row][col+1] != 0 {
+	for row := game.cursor[0]; row < game.nrows; row++ {
+		for col := 0; col < game.ncols; col++ {
+			if row == game.cursor[0] && col < game.cursor[1] {
+				continue
+			}
+			if col == game.ncols-1 { // if at last column, can only go straight to next row
+				if row == game.nrows-1 {
+					game.cursor[0] = game.nrows - 1
+					game.cursor[1] = game.ncols - 1
+					return
+				}
+				game.cursor[0] = row + 1
+				game.cursor[1] = 0
+				countWords++
+				continue
+			}
+			if row == game.nrows-1 && col == game.ncols-1 {
+				game.cursor[0] = row
+				game.cursor[1] = col
+				return
+			}
+			if game.board[row][col] == 0 && game.board[row][col+1] != 0 { // we are at last blank before next word
 				nJumps := col + 1 - game.cursor[1]
 				game.moveCursorRight(nJumps)
 				countWords++
-				if countWords == words {
-					break
-				}
 			}
-			jump++
-			col++
+			if countWords == words {
+				return
+			}
 		}
-		col = 0 // game.cursor[1]
-		row++
 	}
 }
 
