@@ -242,11 +242,11 @@ func (game *Game) jumpWordRight(nWords rune) {
 				game.cursor[1] = col
 				return
 			}
-			if game.board[row][col] == 0 && game.board[row][col+1] != 0 { // we are at last blank before next word
-				nJumps := col + 1 - game.cursor[1]
-				game.moveCursorRight(nJumps)
-				countWords++
-			}
+			// if game.board[row][col] == 0 && game.board[row][col+1] != 0 { // we are at last blank before next word
+			// 	nJumps := col + 1 - game.cursor[1]
+			// 	game.moveCursorRight(nJumps)
+			// 	countWords++
+			// }
 			if countWords == words {
 				return
 			}
@@ -329,6 +329,7 @@ func main() {
 	os.Setenv("TCELL_TRUECOLOR", "1")
 
 	game := initGame()
+
 	tui := TUI{'1', [2]rune{' ', ' '}, false, false, false}
 	screen, err := tcell.NewScreen()
 	if err != nil {
@@ -340,6 +341,8 @@ func main() {
 	}
 	defer screen.Fini()
 
+	screen.Clear()
+	startMenu(screen)
 	for { // Main event loop
 		screen.Clear()
 		displayBoard(&game, &tui, screen, tui.printLogs, tui.printDebug)
@@ -501,6 +504,59 @@ func drawBorder(screen tcell.Screen, nHeight, nWidth int, frameAnchor [2]int) {
 				screen.SetContent(j, i, '│', nil, purple)
 			}
 		}
+	}
+}
+
+func startMenu(screen tcell.Screen) {
+	for {
+		screen.Clear()
+
+		// Get terminal size
+		width, height := screen.Size()
+
+		// Prepare content
+		title := "SummaX"
+		welcomeMessage := "Welcome to SummaX!"
+		instruction1 := "Press 'Enter' to start."
+		instruction2 := "Press 'q' to quit."
+
+		// Calculate positions to center the content
+		y := height / 2
+		centerX := func(text string) int { return (width - len(text)) / 2 }
+
+		// Draw content at the calculated positions
+		drawText(screen, centerX(title), y-2, title)
+		drawText(screen, centerX(welcomeMessage), y, welcomeMessage)
+		drawText(screen, centerX(instruction1), y+2, instruction1)
+		drawText(screen, centerX(instruction2), y+4, instruction2)
+
+		screen.Show()
+
+		// Handle user input
+		ev := screen.PollEvent()
+		switch event := ev.(type) {
+		case *tcell.EventKey:
+			switch event.Key() {
+			case tcell.KeyEnter:
+				// screen.Clear()
+				// displayBoard(screen) // Call the game board display function
+				return
+			case tcell.KeyRune:
+				if event.Rune() == 'q' {
+					screen.Fini()
+					os.Exit(0)
+				}
+			}
+		case *tcell.EventResize:
+			// Redraw on resize
+			continue
+		}
+	}
+}
+
+func drawText(screen tcell.Screen, x, y int, text string) {
+	for i, r := range text {
+		screen.SetContent(x+i, y, r, nil, tcell.StyleDefault)
 	}
 }
 
