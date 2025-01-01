@@ -517,8 +517,8 @@ func startMenu(screen tcell.Screen) {
 		// Prepare content
 		title := "SummaX"
 		welcomeMessage := "Welcome to SummaX!"
-		instruction1 := "Press 'Enter' to start."
-		instruction2 := "Press 'q' to quit."
+		instruction1 := "Press 'ENTER' to start."
+		instruction2 := "Press 'Q' to quit."
 
 		// Calculate positions to center the content
 		y := height / 2
