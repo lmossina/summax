@@ -206,49 +206,48 @@ func (g *Game) moveCursorRight(jumpSize ...int) {
 }
 
 func (game *Game) jumpWordRight(nWords rune) {
-	// imitate 'w': move to beginning of following word
+	// imitate VIM '[number]w': jump [number] words, stops at first letter of target word
 
 	words := 1
 	if nWords >= '0' && nWords <= '9' {
 		words = int(nWords - '0')
+	} else {
+		panic("Error, jumpWordRight: expected digit 0..9")
 	}
 
-	// jump := 1
-	// _, col := game.cursor[0], game.cursor[1]
 	countWords := 0
 
-	// 1. cursor is in last word or blanks of last line:
-	//  go to last (blank) cell (e.g. in vim if spaces)
-	// 2. Draw the rest of the owl
-	//
 	for row := game.cursor[0]; row < game.nrows; row++ {
-		for col := 0; col < game.ncols; col++ {
-			if row == game.cursor[0] && col < game.cursor[1] {
-				continue
-			}
-			if col == game.ncols-1 { // if at last column, can only go straight to next row
-				if row == game.nrows-1 {
-					game.cursor[0] = game.nrows - 1
-					game.cursor[1] = game.ncols - 1
-					return
-				}
-				game.cursor[0] = row + 1
-				game.cursor[1] = 0
-				countWords++
-				continue
-			}
-			if row == game.nrows-1 && col == game.ncols-1 {
-				game.cursor[0] = row
-				game.cursor[1] = col
-				return
-			}
-			// if game.board[row][col] == 0 && game.board[row][col+1] != 0 { // we are at last blank before next word
-			// 	nJumps := col + 1 - game.cursor[1]
-			// 	game.moveCursorRight(nJumps)
-			// 	countWords++
-			// }
+		for col := game.cursor[1]; col < game.ncols; col++ {
+			currentCell := game.board[row][col]
 			if countWords == words {
 				return
+			}
+			// if at last column, can only go straight to next row
+			if col == game.ncols-1 {
+				// if at last cell, stop
+				if row == game.nrows-1 {
+					game.cursor[0] = row
+					game.cursor[1] = col
+					return
+				}
+				if game.board[row+1][0] != 0 {
+					game.cursor[0] = row + 1
+					game.cursor[1] = 0
+					countWords++
+				}
+			}
+
+			// if current cell is blank: next is blank, or beginning of word, or already stopped
+			if currentCell == 0 {
+				// 1. bottom right corner: returns is handled in check above
+				// 2. if next cell is blank, continue
+				// 3. next cell is not blank: it's beginning of word
+				if game.board[row][col+1] != 0 {
+					nJumps := (col + 1) - game.cursor[1]
+					game.moveCursorRight(nJumps)
+					countWords++
+				}
 			}
 		}
 	}
@@ -305,7 +304,6 @@ func (game *Game) handleSelect() {
 	}
 }
 
-// TODO move part of this actions to UI?
 func (game *Game) handleVisualMode() {
 	if !game.toggleSelection {
 		game.toggleSelection = !game.toggleSelection
@@ -317,7 +315,6 @@ func (game *Game) handleVisualMode() {
 		}
 		game.selectArea[game.cursor[0]][game.cursor[1]] = 1
 	} else {
-		// game.evaluateSelection()
 		game.clearSelection()
 		game.toggleSelection = !game.toggleSelection
 		game.anchorPoint = anchorPoint{}
@@ -330,7 +327,10 @@ func main() {
 
 	game := initGame()
 
-	tui := TUI{'1', [2]rune{' ', ' '}, false, false, false}
+	brailleMode := false
+	printlogs := false   //true
+	printdebugs := false // true
+	tui := TUI{'1', [2]rune{' ', ' '}, brailleMode, printlogs, printdebugs}
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		log.Fatalf("Error creating screen: %v", err)
@@ -343,9 +343,11 @@ func main() {
 
 	screen.Clear()
 	startMenu(screen)
-	for { // Main event loop
+
+	// Main event loop
+	for {
 		screen.Clear()
-		displayBoard(&game, &tui, screen, tui.printLogs, tui.printDebug)
+		tui.displayBoard(&game, screen)
 		screen.Show()
 
 		ev := screen.PollEvent()
@@ -507,6 +509,10 @@ func drawBorder(screen tcell.Screen, nHeight, nWidth int, frameAnchor [2]int) {
 	}
 }
 
+func colCenteredText(screenWidth int, text string) int {
+	return (screenWidth - len(text)) / 2
+}
+
 func startMenu(screen tcell.Screen) {
 	for {
 		screen.Clear()
@@ -517,18 +523,17 @@ func startMenu(screen tcell.Screen) {
 		// Prepare content
 		title := "SummaX"
 		welcomeMessage := "Welcome to SummaX!"
-		instruction1 := "Press 'ENTER' to start."
-		instruction2 := "Press 'Q' to quit."
+		instruction1 := "type  <Enter>  to start"
+		instruction2 := "type  q        to quit "
 
 		// Calculate positions to center the content
 		y := height / 2
-		centerX := func(text string) int { return (width - len(text)) / 2 }
 
 		// Draw content at the calculated positions
-		drawText(screen, centerX(title), y-2, title)
-		drawText(screen, centerX(welcomeMessage), y, welcomeMessage)
-		drawText(screen, centerX(instruction1), y+2, instruction1)
-		drawText(screen, centerX(instruction2), y+4, instruction2)
+		drawText(screen, colCenteredText(width, title), y-2, title)
+		drawText(screen, colCenteredText(width, welcomeMessage), y, welcomeMessage)
+		drawText(screen, colCenteredText(width, instruction1), y+2, instruction1)
+		drawText(screen, colCenteredText(width, instruction2), y+3, instruction2)
 
 		screen.Show()
 
@@ -538,9 +543,11 @@ func startMenu(screen tcell.Screen) {
 		case *tcell.EventKey:
 			switch event.Key() {
 			case tcell.KeyEnter:
-				// screen.Clear()
-				// displayBoard(screen) // Call the game board display function
 				return
+			// exit the program: q or ctrl+c
+			case tcell.KeyCtrlC:
+				screen.Fini()
+				os.Exit(0)
 			case tcell.KeyRune:
 				if event.Rune() == 'q' {
 					screen.Fini()
@@ -548,7 +555,7 @@ func startMenu(screen tcell.Screen) {
 				}
 			}
 		case *tcell.EventResize:
-			// Redraw on resize
+			// TODO: Redraw on resize
 			continue
 		}
 	}
@@ -560,166 +567,175 @@ func drawText(screen tcell.Screen, x, y int, text string) {
 	}
 }
 
-func displayBoard(game *Game, tui *TUI, screen tcell.Screen, printLogs, printDebug bool) {
+func (tui *TUI) drawBoard(game *Game, screen tcell.Screen, leftOffset, upperOffset int) { //, rowOffset, columnOffset int) {
+	for i := 0; i < game.nrows; i++ {
+		for j := 0; j < game.ncols; j++ {
+			var str_value string
+			cellValue := game.board[i][j]
+			if cellValue == 0 {
+				str_value = "　"
+			} else {
+				// WIP: trying to use directly full-width unicode digits in game board
+				str_value = fmt.Sprintf("%c", '０'+cellValue)
+				// NB: careful with borders and special chars (e.g. cdot for cursor position padding)
+				if tui.brailleMode { // test unicode spacing
+					// var brailleChar rune
+					// // fullwidth unicode digits: １, ２, ３, ４, ５, ６, ７, ８, ９, ０
+					// switch cellValue {
+					// case 1:
+					// 	brailleChar = '１' //'一' // '⠁'
+					// case 2:
+					// 	brailleChar = '２' // '二' // '⠂'
+					// case 3:
+					// 	brailleChar = '３' // '三' //'⠃'
+					// case 4:
+					// 	brailleChar = '４' //'四' // '⠄'
+					// case 5:
+					// 	brailleChar = '５' // '五' // '⠅'
+					// case 6:
+					// 	brailleChar = '６' //'六' // '⠆'
+					// case 7:
+					// 	brailleChar = '７' // '七' // '⠇'
+					// case 8:
+					// 	brailleChar = '８' // '八' // '⠈'
+					// case 9:
+					// 	brailleChar = '９' // '九' // '⠉'
+					// }
+					// str_value = fmt.Sprintf("%c", brailleChar)
+				}
+			}
+
+			x, y := j*2+1+leftOffset, i+upperOffset+1
+			value := " " + str_value
+
+			if game.toggleSelection {
+				selcoords := game.selectionCoordinates()
+				leftBoundary := selcoords[0][1]
+				if j == leftBoundary {
+					x, y = j*2+2+leftOffset, i+upperOffset+1
+					value = str_value
+				}
+			}
+
+			// select style of cell: color number representation according to their values
+			k := 0
+			for _, char := range value {
+				thisStyle := defaultStyle
+				if game.selectArea[i][j] == 1 {
+					thisStyle = highlightStyle
+				} else {
+					switch cellValue {
+					case 1:
+						thisStyle = blue
+					case 2:
+						thisStyle = purple
+					case 3:
+						thisStyle = green
+					case 4:
+						thisStyle = brown
+					case 5:
+						thisStyle = gray
+					case 6:
+						thisStyle = antique
+					case 7:
+						thisStyle = white
+					case 8:
+						thisStyle = red
+					case 9:
+						thisStyle = yellow
+					}
+				}
+				screen.SetContent(x+k, y, char, nil, thisStyle)
+				k += runewidth.RuneWidth(char)
+			}
+		}
+	}
+}
+
+func (tui *TUI) drawCursor(game *Game, screen tcell.Screen, rowOffset, columnOffset int) {
+	cRow, cCol := game.cursor[0], game.cursor[1]
+	value := fmt.Sprintf("%d", game.board[cRow][cCol])
+	cellChar := rune(value[0])
+
+	// hide cells with value zero, which happens only when cell
+	// has been used to score a ten
+	if cellChar == '0' {
+		cellChar = '　' // full-width space
+	} else {
+		cellChar = cellChar + 0xFF10 - '0' // 0xFF10 is full-width zero
+	}
+	screen.SetContent(cCol*2+2+columnOffset-1, cRow+rowOffset, cellChar, nil, cursorHighlight)
+
+	// draw top bar with VIM motions grid: jumps available 1..9
+	// TODO vimRowPos should be automatically one line above upper border
+	vimRowPos := 3
+
+	for i := 0; i < cCol; i++ {
+		countLeft := cCol - i
+		if countLeft <= 9 && countLeft > 0 {
+			screen.SetContent(cCol*2+2+columnOffset-1-countLeft*2, vimRowPos, rune('０'+countLeft), nil, darkGray)
+		} else {
+			// screen.SetContent(cCol*2+2+columnOffset-1-countLeft*2, vimRowPos, '·', nil, darkGray)
+			screen.SetContent(cCol*2+2+columnOffset-1-countLeft*2, vimRowPos, '－', nil, darkGray)
+		}
+	}
+	for i := cCol; i < game.ncols; i++ {
+		countRight := game.ncols - 1 - i
+		if countRight <= 9 && countRight > 0 {
+			screen.SetContent(cCol*2+2+columnOffset-1+countRight*2, vimRowPos, rune('０'+countRight), nil, darkGray)
+		} else {
+			screen.SetContent(cCol*2+2+columnOffset-1+countRight*2, vimRowPos, '－', nil, darkGray)
+		}
+	}
+	// top row: cursor position on grid
+	screen.SetContent(cCol*2+2+columnOffset-1, 3, rune('　'), nil, cursorHighlight)
+
+	// draw left-hand-side bar with VIM motions grid: jumps available 1..9
+	// NB: use halfwidth unicodes for now... maybe?
+	vimColPos := 2
+	for i := 0; i < cRow; i++ {
+		countUp := cRow - i
+		if countUp <= 9 && countUp > 0 {
+			screen.SetContent(vimColPos, cRow+rowOffset-countUp, rune('0'+countUp), nil, darkGray)
+		} else {
+			screen.SetContent(vimColPos, cRow+rowOffset-countUp, '·', nil, darkGray)
+		}
+	}
+
+	for i := cRow; i < game.nrows; i++ {
+		countDown := game.nrows - 1 - i
+		if countDown <= 9 && countDown > 0 {
+			screen.SetContent(vimColPos, cRow+rowOffset+countDown, rune('0'+countDown), nil, darkGray)
+		} else {
+			screen.SetContent(vimColPos, cRow+rowOffset+countDown, '·', nil, darkGray)
+		}
+	}
+	// left column: cursos position
+	screen.SetContent(vimColPos, cRow+rowOffset, rune(' '), nil, cursorHighlight)
+}
+
+func (tui *TUI) displayBoard(game *Game, screen tcell.Screen) { //, printLogs, printDebug bool) {
 	// TODO consider making offsets depending on terminal size, and center board/text accordingly
 	leftOffset := 4
 	upperOffset := 4 // len(borders)
+	anchor := [2]int{upperOffset, leftOffset}
 
 	titleRow := 1
-
-	title := "               SummaX"
-	for j, char := range title {
-		screen.SetContent(j+leftOffset, titleRow, char, nil, yellow)
-	}
-
-	// TODO extract to func
-	drawBoard := func(rowOffset, columnOffset int) {
-		for i := 0; i < game.nrows; i++ {
-			for j := 0; j < game.ncols; j++ {
-				var str_value string
-				cellValue := game.board[i][j]
-				if cellValue == 0 {
-					str_value = " "
-				} else {
-					str_value = fmt.Sprintf("%d", cellValue)
-					if tui.brailleMode {
-						var brailleChar rune
-						switch cellValue {
-						case 1:
-							brailleChar = '⠁'
-						case 2:
-							brailleChar = '⠂'
-						case 3:
-							brailleChar = '⠃'
-						case 4:
-							brailleChar = '⠄'
-						case 5:
-							brailleChar = '⠅'
-						case 6:
-							brailleChar = '⠆'
-						case 7:
-							brailleChar = '⠇'
-						case 8:
-							brailleChar = '⠈'
-						case 9:
-							brailleChar = '⠉'
-						}
-						str_value = fmt.Sprintf("%c", brailleChar)
-					}
-				}
-
-				x, y := j*2+1+leftOffset, i+upperOffset+1
-				value := " " + str_value
-
-				if game.toggleSelection {
-					selcoords := game.selectionCoordinates()
-					leftBoundary := selcoords[0][1]
-					if j == leftBoundary {
-						x, y = j*2+2+leftOffset, i+upperOffset+1
-						value = str_value
-					}
-				}
-
-				// select style of cell: color number representation according to their values
-				k := 0
-				for _, char := range value {
-					thisStyle := defaultStyle
-					if game.selectArea[i][j] == 1 {
-						thisStyle = highlightStyle
-					} else {
-						switch cellValue {
-						case 1:
-							thisStyle = blue
-						case 2:
-							thisStyle = purple
-						case 3:
-							thisStyle = green
-						case 4:
-							thisStyle = brown
-						case 5:
-							thisStyle = gray
-						case 6:
-							thisStyle = antique
-						case 7:
-							thisStyle = white
-						case 8:
-							thisStyle = red
-						case 9:
-							thisStyle = yellow
-						}
-					}
-					screen.SetContent(x+k, y, char, nil, thisStyle)
-					k += runewidth.RuneWidth(char)
-				}
-			}
-		}
-	}
+	// }
+	screenWidth, screenHeight := screen.Size()
+	_ = screenHeight
+	title := "SummaX"
+	drawText(screen, colCenteredText(screenWidth, title), titleRow, title)
 
 	height := nRows + 1 + 1
 	width := nCols + (nCols + 1) + 1 + 1
-	anchor := [2]int{upperOffset, leftOffset}
 	drawBorder(screen, height, width, anchor)
 
 	// width and height of border lines
-	drawBoard(anchor[0], anchor[1])
+	tui.drawBoard(game, screen, anchor[0], anchor[1])
 
-	drawCursor := func(rowOffset, columnOffset int) {
-		cRow, cCol := game.cursor[0], game.cursor[1]
-		value := fmt.Sprintf("%d", game.board[cRow][cCol])
-		cellChar := rune(value[0])
-
-		// hide cells with value zero, which happens only when cell
-		// has been used to score a ten
-		if cellChar == '0' {
-			cellChar = ' '
-		}
-		screen.SetContent(cCol*2+2+columnOffset-1, cRow+rowOffset, cellChar, nil, cursorHighlight)
-
-		// draw top bar with VIM motions grid: jumps available 1..9
-		// TODO vimRowPos should be automatically one line above upper border
-		vimRowPos := 3
-		for i := 0; i < cCol; i++ {
-			countLeft := cCol - i
-			if countLeft <= 9 && countLeft > 0 {
-				screen.SetContent(cCol*2+2+columnOffset-1-countLeft*2, vimRowPos, rune('0'+countLeft), nil, darkGray)
-			} else {
-				screen.SetContent(cCol*2+2+columnOffset-1-countLeft*2, vimRowPos, '·', nil, darkGray)
-			}
-		}
-		for i := cCol; i < game.ncols; i++ {
-			countRight := game.ncols - 1 - i
-			if countRight <= 9 && countRight > 0 {
-				screen.SetContent(cCol*2+2+columnOffset-1+countRight*2, vimRowPos, rune('0'+countRight), nil, darkGray)
-			} else {
-				screen.SetContent(cCol*2+2+columnOffset-1+countRight*2, vimRowPos, '·', nil, darkGray)
-			}
-		}
-		// top row: cursor position on grid
-		screen.SetContent(cCol*2+2+columnOffset-1, 3, rune(' '), nil, cursorHighlight)
-
-		// draw left-hand-side bar with VIM motions grid: jumps available 1..9
-		vimColPos := 2
-		for i := 0; i < cRow; i++ {
-			countUp := cRow - i
-			if countUp <= 9 && countUp > 0 {
-				screen.SetContent(vimColPos, cRow+rowOffset-countUp, rune('0'+countUp), nil, darkGray)
-			} else {
-				screen.SetContent(vimColPos, cRow+rowOffset-countUp, '·', nil, darkGray)
-			}
-		}
-
-		for i := cRow; i < game.nrows; i++ {
-			countDown := game.nrows - 1 - i
-			if countDown <= 9 && countDown > 0 {
-				screen.SetContent(vimColPos, cRow+rowOffset+countDown, rune('0'+countDown), nil, darkGray)
-			} else {
-				screen.SetContent(vimColPos, cRow+rowOffset+countDown, '·', nil, darkGray)
-			}
-		}
-		// left column: cursos position
-		screen.SetContent(vimColPos, cRow+rowOffset, rune(' '), nil, cursorHighlight)
-	}
-	drawCursor(anchor[0]+1, anchor[1]+1)
+	// drawCursor := func(rowOffset, columnOffset int) {
+	tui.drawCursor(game, screen, anchor[0]+1, anchor[1]+1)
 
 	tui.drawMessages(game, screen, anchor[0], anchor[1])
 }
@@ -731,9 +747,9 @@ func (tui *TUI) drawMessages(game *Game, screen tcell.Screen, rowAnchor, colAnch
 		"",
 		"     score: " + fmt.Sprintf("%d", game.totalScore),
 		"      exit: q[uit], ctrl+c",
-		"      move: h j k l  or  ←  ↓  ↑  →",
-		"(de)select",
-		"    & eval: ctrl+v, v, or ␣ (space bar)",
+		// "      move: h j k l  or  ←  ↓  ↑  →",
+		// "toggle selection",
+		// "    & eval: ctrl+v, v, or ␣ (space bar)",
 		"    motion: " + fmt.Sprintf(string(tui.lastMove[:])),
 		"",
 	}
@@ -751,6 +767,7 @@ func (tui *TUI) drawMessages(game *Game, screen tcell.Screen, rowAnchor, colAnch
 		debugMessages = append(debugMessages, chunk)
 		messages = append(messages, "  ")
 	}
+
 	if tui.printDebug {
 		messages = append(messages, debugMessages...)
 	}
