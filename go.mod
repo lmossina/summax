@@ -1,4 +1,4 @@
-module github.com/lmossina/summa-dix
+module github.com/lmossina/summax
 
 go 1.23.2
 
