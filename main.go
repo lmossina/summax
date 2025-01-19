@@ -327,10 +327,10 @@ func main() {
 
 	game := initGame()
 
-	brailleMode := false
-	printlogs := false   //true
-	printdebugs := false // true
-	tui := TUI{'1', [2]rune{' ', ' '}, brailleMode, printlogs, printdebugs}
+	hanziMode := false
+	printlogs := false //true
+	printdebugs := true
+	tui := TUI{'1', [2]rune{' ', ' '}, hanziMode, printlogs, printdebugs}
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		log.Fatalf("Error creating screen: %v", err)
@@ -342,7 +342,7 @@ func main() {
 	defer screen.Fini()
 
 	screen.Clear()
-	startMenu(screen)
+	// startMenu(screen)
 
 	// Main event loop
 	for {
@@ -418,11 +418,11 @@ func main() {
 
 // === UI ===
 type TUI struct {
-	jumpBuffer  rune // int
-	lastMove    [2]rune
-	brailleMode bool
-	printLogs   bool
-	printDebug  bool
+	jumpBuffer rune // int
+	lastMove   [2]rune
+	hanziMode  bool
+	printLogs  bool
+	printDebug bool
 }
 
 func (tui *TUI) updateBuffer(val int) {
@@ -471,41 +471,6 @@ func drawString(screen tcell.Screen, row, col int, text string) {
 	for _, char := range text {
 		screen.SetContent(x, row, char, nil, yellow)
 		x += runewidth.RuneWidth(char)
-	}
-}
-
-func drawBorder(screen tcell.Screen, nHeight, nWidth int, frameAnchor [2]int) {
-	horiLine := strings.Repeat("─", nWidth-2)
-	row0, col0 := frameAnchor[0], frameAnchor[1]
-
-	// draw top row (w/ corners)
-	topper := "╭" + horiLine + "╮"
-	x := col0
-	for _, char := range topper {
-		screen.SetContent(x, row0, char, nil, yellow)
-		x += runewidth.RuneWidth(char)
-	}
-
-	// draw bottom row (w/ corners)
-	bottomer := "╰" + horiLine + "╯"
-	x = col0
-	for _, ch := range bottomer {
-		screen.SetContent(x, row0+nHeight-1, ch, nil, green)
-		x += runewidth.RuneWidth(ch)
-	}
-
-	for i := row0 + 1; i < nHeight+row0-1; i++ {
-		for j := col0; j < nWidth+col0; j++ {
-			// draw left border line
-			if j == col0 {
-				screen.SetContent(j, i, '│', nil, red)
-			}
-
-			// draw left border line
-			if j == nWidth+col0-1 {
-				screen.SetContent(j, i, '│', nil, purple)
-			}
-		}
 	}
 }
 
@@ -567,41 +532,64 @@ func drawText(screen tcell.Screen, x, y int, text string) {
 	}
 }
 
-func (tui *TUI) drawBoard(game *Game, screen tcell.Screen, leftOffset, upperOffset int) { //, rowOffset, columnOffset int) {
+func (tui *TUI) drawBorder(screen tcell.Screen, nHeight, nWidth int, frameAnchor [2]int, offsets [2]int) {
+	horiLine := strings.Repeat("─", nWidth-3)
+	row0, col0 := frameAnchor[0]+offsets[0], (frameAnchor[1]-(nWidth/2))+offsets[1]
+
+	// draw top row (w/ corners)
+	borderInitCol := col0 + 1
+	topper := "╭" + horiLine + "╮"
+	x := borderInitCol
+	for _, char := range topper {
+		screen.SetContent(x, row0, char, nil, yellow)
+		x += runewidth.RuneWidth(char)
+	}
+
+	// draw bottom row (w/ corners)
+	bottomer := "╰" + horiLine + "╯"
+	x = borderInitCol
+	for _, ch := range bottomer {
+		screen.SetContent(x, row0+nHeight-1, ch, nil, green)
+		x += runewidth.RuneWidth(ch)
+	}
+
+	for i := row0 + 1; i < nHeight+row0-1; i++ {
+		screen.SetContent(col0, i, '│', nil, red)
+		screen.SetContent(col0-1, i, '│', nil, red)
+		screen.SetContent(col0+1, i, '│', nil, red)
+		screen.SetContent(nWidth+col0-1, i, '│', nil, purple)
+		// for j := col0; j < nWidth+col0; j++ {
+		// 	// draw left border line
+		// 	if j == col0 {
+		// 		screen.SetContent(j, i, '│', nil, red)
+		// 	}
+
+		// 	// draw right border line
+		// 	if j == nWidth+col0-1 {
+		// 		screen.SetContent(j, i, '│', nil, purple)
+		// 	}
+		// }
+	}
+}
+
+func (tui *TUI) drawBoard(game *Game, screen tcell.Screen, anchor, offsets [2]int) {
+	upperOffset, leftOffset := anchor[0]+offsets[0], anchor[1]+offsets[1]
+	hanziNumerals := [9]rune{'一', '二', '三', '四', '五', '六', '七', '八', '九'}
+	// brailleDigits := []rune{'⠁', '⠃', '⠉', '⠙', '⠑', '⠋', '⠛', '⠓', '⠊'}
+
+	// row0, col0 := frameAnchor[0]+offsets[0], (frameAnchor[1]-(nWidth/2))+offsets[1]
+
 	for i := 0; i < game.nrows; i++ {
 		for j := 0; j < game.ncols; j++ {
 			var str_value string
 			cellValue := game.board[i][j]
 			if cellValue == 0 {
 				str_value = "　"
-			} else {
-				// WIP: trying to use directly full-width unicode digits in game board
-				str_value = fmt.Sprintf("%c", '０'+cellValue)
-				// NB: careful with borders and special chars (e.g. cdot for cursor position padding)
-				if tui.brailleMode { // test unicode spacing
-					// var brailleChar rune
-					// // fullwidth unicode digits: １, ２, ３, ４, ５, ６, ７, ８, ９, ０
-					// switch cellValue {
-					// case 1:
-					// 	brailleChar = '１' //'一' // '⠁'
-					// case 2:
-					// 	brailleChar = '２' // '二' // '⠂'
-					// case 3:
-					// 	brailleChar = '３' // '三' //'⠃'
-					// case 4:
-					// 	brailleChar = '４' //'四' // '⠄'
-					// case 5:
-					// 	brailleChar = '５' // '五' // '⠅'
-					// case 6:
-					// 	brailleChar = '６' //'六' // '⠆'
-					// case 7:
-					// 	brailleChar = '７' // '七' // '⠇'
-					// case 8:
-					// 	brailleChar = '８' // '八' // '⠈'
-					// case 9:
-					// 	brailleChar = '９' // '九' // '⠉'
-					// }
-					// str_value = fmt.Sprintf("%c", brailleChar)
+			} else { // assumes cellValue is 1..9
+				str_value = fmt.Sprintf("%c", '０'+cellValue) // full-width unicode digits
+
+				if tui.hanziMode {
+					str_value = fmt.Sprintf("%c", hanziNumerals[cellValue-1])
 				}
 			}
 
@@ -624,25 +612,9 @@ func (tui *TUI) drawBoard(game *Game, screen tcell.Screen, leftOffset, upperOffs
 				if game.selectArea[i][j] == 1 {
 					thisStyle = highlightStyle
 				} else {
-					switch cellValue {
-					case 1:
-						thisStyle = blue
-					case 2:
-						thisStyle = purple
-					case 3:
-						thisStyle = green
-					case 4:
-						thisStyle = brown
-					case 5:
-						thisStyle = gray
-					case 6:
-						thisStyle = antique
-					case 7:
-						thisStyle = white
-					case 8:
-						thisStyle = red
-					case 9:
-						thisStyle = yellow
+					styles := [9]tcell.Style{blue, purple, green, brown, gray, antique, white, red, yellow}
+					if cellValue >= 1 && cellValue <= 9 {
+						thisStyle = styles[cellValue-1]
 					}
 				}
 				screen.SetContent(x+k, y, char, nil, thisStyle)
@@ -652,7 +624,8 @@ func (tui *TUI) drawBoard(game *Game, screen tcell.Screen, leftOffset, upperOffs
 	}
 }
 
-func (tui *TUI) drawCursor(game *Game, screen tcell.Screen, rowOffset, columnOffset int) {
+func (tui *TUI) drawCursor(game *Game, screen tcell.Screen, anchor [2]int, offsets [2]int) {
+	rowOffset, columnOffset := anchor[0]+offsets[0], anchor[1]+offsets[1]
 	cRow, cCol := game.cursor[0], game.cursor[1]
 	value := fmt.Sprintf("%d", game.board[cRow][cCol])
 	cellChar := rune(value[0])
@@ -664,7 +637,11 @@ func (tui *TUI) drawCursor(game *Game, screen tcell.Screen, rowOffset, columnOff
 	} else {
 		cellChar = cellChar + 0xFF10 - '0' // 0xFF10 is full-width zero
 	}
-	screen.SetContent(cCol*2+2+columnOffset-1, cRow+rowOffset, cellChar, nil, cursorHighlight)
+
+	x_ := cCol*2 + 2 + columnOffset - 1
+	y_ := cRow + rowOffset
+
+	screen.SetContent(x_, y_, cellChar, nil, cursorHighlight)
 
 	// draw top bar with VIM motions grid: jumps available 1..9
 	// TODO vimRowPos should be automatically one line above upper border
@@ -675,7 +652,6 @@ func (tui *TUI) drawCursor(game *Game, screen tcell.Screen, rowOffset, columnOff
 		if countLeft <= 9 && countLeft > 0 {
 			screen.SetContent(cCol*2+2+columnOffset-1-countLeft*2, vimRowPos, rune('０'+countLeft), nil, darkGray)
 		} else {
-			// screen.SetContent(cCol*2+2+columnOffset-1-countLeft*2, vimRowPos, '·', nil, darkGray)
 			screen.SetContent(cCol*2+2+columnOffset-1-countLeft*2, vimRowPos, '－', nil, darkGray)
 		}
 	}
@@ -692,7 +668,8 @@ func (tui *TUI) drawCursor(game *Game, screen tcell.Screen, rowOffset, columnOff
 
 	// draw left-hand-side bar with VIM motions grid: jumps available 1..9
 	// NB: use halfwidth unicodes for now... maybe?
-	vimColPos := 2
+	// vimColPos := 2
+	vimColPos := columnOffset - 2
 	for i := 0; i < cRow; i++ {
 		countUp := cRow - i
 		if countUp <= 9 && countUp > 0 {
@@ -715,33 +692,37 @@ func (tui *TUI) drawCursor(game *Game, screen tcell.Screen, rowOffset, columnOff
 }
 
 func (tui *TUI) displayBoard(game *Game, screen tcell.Screen) { //, printLogs, printDebug bool) {
-	// TODO consider making offsets depending on terminal size, and center board/text accordingly
-	leftOffset := 4
-	upperOffset := 4 // len(borders)
-	anchor := [2]int{upperOffset, leftOffset}
-
-	titleRow := 1
-	// }
 	screenWidth, screenHeight := screen.Size()
+	midColumn := (screenWidth) / 2
 	_ = screenHeight
-	title := "SummaX"
-	drawText(screen, colCenteredText(screenWidth, title), titleRow, title)
+	firstNonemptyRow := 1
+	relativeAnchor := [2]int{firstNonemptyRow + 1, midColumn}
 
-	height := nRows + 1 + 1
-	width := nCols + (nCols + 1) + 1 + 1
-	drawBorder(screen, height, width, anchor)
+	leftOffset := 0
+	upperOffset := 0 // len(borders)
+	anchor := [2]int{upperOffset, leftOffset}
+	_ = anchor
+
+	title := "SummaX"
+	drawText(screen, colCenteredText(screenWidth, title), firstNonemptyRow, title)
+
+	height := game.nrows + 1 + 1
+	width := game.ncols + (game.ncols + 1) + 1 + 1
+	tui.drawBorder(screen, height, width, relativeAnchor, [2]int{2, 0})
 
 	// width and height of border lines
-	tui.drawBoard(game, screen, anchor[0], anchor[1])
+	tui.drawBoard(game, screen, relativeAnchor, [2]int{2, -(width / 2)})
 
-	// drawCursor := func(rowOffset, columnOffset int) {
-	tui.drawCursor(game, screen, anchor[0]+1, anchor[1]+1)
+	// // // tui.drawCursor(game, screen, anchor[0]+1, anchor[1]+1)
+	// tui.drawCursor(game, screen, relativeAnchor, [2]int{1, -(width / 2)})
+	// // tui.drawCursor(game, screen, anchor)
 
-	tui.drawMessages(game, screen, anchor[0], anchor[1])
+	// tui.drawMessages(game, screen, anchor)
+	tui.drawMessages(game, screen, [2]int{relativeAnchor[0] + 4, relativeAnchor[1] - (width / 2)})
 }
 
-func (tui *TUI) drawMessages(game *Game, screen tcell.Screen, rowAnchor, colAnchor int) {
-	cRow, cCol := rowAnchor+1, colAnchor
+func (tui *TUI) drawMessages(game *Game, screen tcell.Screen, anchor [2]int) {
+	cRow, cCol := anchor[0], anchor[1]
 	verticalSpace := 1
 	messages := []string{
 		"",
@@ -765,7 +746,7 @@ func (tui *TUI) drawMessages(game *Game, screen tcell.Screen, rowAnchor, colAnch
 			chunk += fmt.Sprintf("%d ", game.selectArea[i][j])
 		}
 		debugMessages = append(debugMessages, chunk)
-		messages = append(messages, "  ")
+		// messages = append(messages, "  ")
 	}
 
 	if tui.printDebug {
